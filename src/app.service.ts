@@ -1,6 +1,6 @@
 import { HttpException, HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { JsonRpcProvider, Wallet, ethers, formatEther } from 'ethers';
-import { WithdrawalDto } from './dto/withdrawal.dto';
+import { WithdrawalDto, WithdrawalResponseDto } from './dto/withdrawal.dto';
 import { Repository } from 'typeorm';
 import { Cache, CACHE_MANAGER } from '@nestjs/cache-manager';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -53,7 +53,7 @@ export class AppService {
     );
   }
 
-  async withdraw(signDto: WithdrawalDto) {
+  async withdraw(signDto: WithdrawalDto): Promise<WithdrawalResponseDto> {
     try {
       const decoded = this.jwtService.verify(signDto.accessToken, {
         algorithms: ['RS256'],

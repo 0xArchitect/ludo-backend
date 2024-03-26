@@ -1,6 +1,6 @@
 import { Body, Controller, Post } from '@nestjs/common';
 import { AppService } from './app.service';
-import { WithdrawalDto } from './dto/withdrawal.dto';
+import { WithdrawalDto, WithdrawalResponseDto } from './dto/withdrawal.dto';
 import { Throttle } from '@nestjs/throttler';
 
 @Controller()
@@ -9,7 +9,9 @@ export class AppController {
 
   @Post('withdraw')
   @Throttle({ default: { limit: 1, ttl: 15000 } })
-  async withdraw(@Body() withdrawalDto: WithdrawalDto) {
+  async withdraw(
+    @Body() withdrawalDto: WithdrawalDto,
+  ): Promise<WithdrawalResponseDto> {
     return await this.appService.withdraw(withdrawalDto);
   }
 

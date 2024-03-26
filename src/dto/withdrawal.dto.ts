@@ -11,3 +11,10 @@ export class WithdrawalDto {
   @IsString()
   user_address: string;
 }
+export class WithdrawalResponseDto {
+  sign: string;
+  withdrawalAmount: string;
+  user: string;
+  timestamp: number;
+  nonce: number;
+}
