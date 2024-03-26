@@ -292,7 +292,23 @@ export class AppService {
     for (const item of pending) {
       const user = item.user_address;
       const nonce = item.nonce;
-      // const filters = contract.filters.Withdrawal(nonce, user);
+      const filters = contract.filters.Withdrawal(nonce, user);
+      const events = await contract.queryFilter(filters);
+      if (!events.length) {
+        const userEntity = await this.userRepository.findOne({
+          where: {
+            id: item.userId,
+          },
+        });
+        if (userEntity) {
+          userEntity.balance = userEntity.balance + item.amount;
+          await this.userRepository.save(userEntity);
+        }
+        await this.pendingList.deleteOne({
+          user_address: item.user_address,
+          nonce: item.nonce,
+        });
+      }
     }
   }
 }
