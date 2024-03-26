@@ -1,0 +1,10 @@
+import { IsJWT, IsNumber, IsPositive } from 'class-validator';
+
+export class WithdrawalDto {
+  @IsNumber()
+  @IsPositive()
+  amount: number;
+
+  @IsJWT({ message: 'Invalid access token' })
+  accessToken: string;
+}

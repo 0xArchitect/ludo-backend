@@ -1,93 +1,148 @@
 import { HttpException, HttpStatus, Inject, Injectable } from '@nestjs/common';
-import { Wallet, ethers } from 'ethers';
-import { SignDto } from './dto/sign.dto';
-import { Not, Repository, Connection } from 'typeorm';
+import { JsonRpcProvider, Wallet, ethers, formatEther } from 'ethers';
+import { WithdrawalDto } from './dto/withdrawal.dto';
+import { Repository } from 'typeorm';
 import { Cache, CACHE_MANAGER } from '@nestjs/cache-manager';
 import { InjectRepository } from '@nestjs/typeorm';
 import { User } from './entities/users.entity';
-
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { balancePoolAbi } from './abi/abis';
+import { LastBlock } from './entities/lastblock.entity';
+import { Model } from 'mongoose';
+import { InjectModel } from '@nestjs/mongoose';
+import { JsonWebTokenError, JwtService } from '@nestjs/jwt';
+import { PendingList } from './entities/pending.list';
+import * as fs from 'fs';
+import * as path from 'path';
+const publicKey = fs.readFileSync(
+  path.resolve(__dirname, '..', 'src', 'oauth-public.key'),
+  'utf8',
+);
+if (!publicKey) {
+  throw new Error('Public key not found');
+}
 @Injectable()
 export class AppService {
+  private provider: JsonRpcProvider;
+  private domain = {
+    name: 'LudoBalancePool',
+    version: '1',
+    chainId: 11155111,
+    verifyingContract: process.env.POOL_ADDRESS,
+  };
+  private types = {
+    UserInfo: [
+      { name: 'user', type: 'address' },
+      { name: 'withdrawalAmount', type: 'uint256' },
+      { name: 'timestamp', type: 'uint256' },
+      { name: 'nonce', type: 'uint256' },
+      // { name: 'signature', type: 'bytes' },
+    ],
+  };
   constructor(
+    private jwtService: JwtService,
     @InjectRepository(User) private userRepository: Repository<User>,
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
-    private connection: Connection,
-  ) {}
+    @InjectModel(LastBlock.name)
+    private readonly lastBlockModel: Model<LastBlock>,
+    @InjectModel(PendingList.name)
+    private readonly pendingList: Model<PendingList>,
+  ) {
+    this.provider = new ethers.JsonRpcProvider(
+      'https://eth-sepolia.g.alchemy.com/v2/IdbA4PP8fCWOYaPZssHe5xo7G6qfB41s',
+    );
+  }
 
-  async withdraw(signDto: SignDto) {
+  async withdraw(signDto: WithdrawalDto) {
     try {
-      const signedBy = await ethers.verifyMessage(
-        signDto.message,
-        signDto.signature,
-      );
-      const test = await this.cacheManager.get(signedBy);
-      if (test) {
-        console.log('cache', test);
-        return test;
-      }
+      const decoded = this.jwtService.verify(signDto.accessToken, {
+        algorithms: ['RS256'],
+        secret: publicKey,
+      });
+      const userId = parseInt(decoded.sub);
       const user = await this.userRepository.findOne({
         where: {
-          wallet_address: signedBy.toLocaleUpperCase(),
+          id: userId,
         },
       });
-      // if (!user) {
-      //   throw new HttpException(
-      //     {
-      //       status: HttpStatus.NOT_FOUND,
-      //       errors: {
-      //         message: 'User not found',
-      //       },
-      //     },
-      //     HttpStatus.NOT_FOUND,
-      //   );
-      // }
-      // return user;
-
-      // if (signedBy !== signDto.user) {
-      //   throw new HttpException(
-      //     {
-      //       status: HttpStatus.UNAUTHORIZED,
-      //       errors: {
-      //         message: 'Invalid signature',
-      //       },
-      //     },
-      //     HttpStatus.UNAUTHORIZED,
-      //   );
-      // }
-
-      const domain = {
-        name: 'Ludo',
-        version: '1',
-        chainId: 11155111,
-        verifyingContract: '0xf3609AEe83A41a5c2dD721983416D3439bceC2e9',
-      };
-      const types = {
-        Signer: [
-          { name: 'user', type: 'address' },
-          { name: 'withdrawlAmount', type: 'uint256' },
-          { name: 'timestamp', type: 'uint256' },
-          { name: 'nonce', type: 'uint256' },
-          { name: 'signature', type: 'bytes' },
-        ],
-      };
-
-      //insert data here to sign
+      if (!user) {
+        throw new HttpException(
+          {
+            status: HttpStatus.NOT_FOUND,
+            errors: {
+              message: 'User not found',
+            },
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+      if (user.wallet_address == '0') {
+        throw new HttpException(
+          {
+            status: HttpStatus.NOT_FOUND,
+            errors: {
+              wallet_address: 'User wallet address not found',
+            },
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+      const existingWithdrawPayload: string = await this.cacheManager.get(
+        user.wallet_address,
+      );
+      if (existingWithdrawPayload) return JSON.parse(existingWithdrawPayload);
+      if (user.balance < signDto.amount) {
+        throw new HttpException(
+          {
+            status: HttpStatus.UNPROCESSABLE_ENTITY,
+            errors: {
+              amount: 'Insufficient balance',
+            },
+          },
+          HttpStatus.UNPROCESSABLE_ENTITY,
+        );
+      }
+      const nonce = Math.round(Math.random() * 9) + Date.now();
       const value = {
-        user: signedBy,
-        withdrawlAmount: 100, // from db
-        timestamp: Date.now(),
-        nonce: Math.round(Math.random() * 9) + Date.now(),
-        signature: signDto.signature,
+        user: user.wallet_address,
+        withdrawalAmount: ethers.parseEther(signDto.amount.toString()),
+        timestamp: Math.floor(Date.now() / 1000),
+        nonce: nonce,
       };
       const signer = new Wallet(process.env.PRIVATE_KEY);
-      const sign = await signer.signTypedData(domain, types, value);
-      await this.cacheManager.set(signedBy, sign);
-      // console.log('sign', sign);
-      // const test = await ethers.verifyTypedData(domain, types, value, sign);
-      // console.log('test', test);
-      return sign;
+      const sign = await signer.signTypedData(this.domain, this.types, value);
+      const withdrawPayload = {
+        sign,
+        ...value,
+        withdrawalAmount: value.withdrawalAmount.toString(),
+      };
+      await this.pendingList.create({
+        user_address: value.user,
+        amount: value.withdrawalAmount.toString(),
+        timestamp: value.timestamp,
+        nonce: value.nonce,
+      });
+      user.balance =
+        user.balance - parseFloat(value.withdrawalAmount.toString());
+      await this.userRepository.save(user);
+      await this.cacheManager.set(
+        user.wallet_address,
+        JSON.stringify(withdrawPayload),
+        300000,
+      );
+      return withdrawPayload;
     } catch (e) {
-      console.log(e);
+      if (e instanceof JsonWebTokenError) {
+        throw new HttpException(
+          {
+            status: HttpStatus.UNAUTHORIZED,
+            errors: {
+              message: e.message,
+            },
+          },
+          HttpStatus.UNAUTHORIZED,
+        );
+      }
       if (e instanceof HttpException) {
         throw e;
       }
@@ -101,10 +156,147 @@ export class AppService {
         HttpStatus.UNPROCESSABLE_ENTITY,
       );
     }
+  }
 
-    // const provider = new ethers.JsonRpcProvider(
-    //   'https://arb-mainnet.g.alchemy.com/v2/_po3CxkM98ODTTcKJrEqDsCelHRamvAh',
-    // );
-    return 'Hello World!';
+  async deposit(useremail: string) {
+    const user = await this.userRepository.findOne({
+      where: {
+        email: useremail,
+      },
+    });
+    if (!user) {
+      throw new HttpException(
+        {
+          status: HttpStatus.NOT_FOUND,
+          errors: {
+            message: 'User not found',
+          },
+        },
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    if (user.wallet_address == '0') {
+      throw new HttpException(
+        {
+          status: HttpStatus.NOT_FOUND,
+          errors: {
+            wallet_address: 'User wallet address not found',
+          },
+        },
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    const signer = new Wallet(process.env.PRIVATE_KEY);
+    const sign = await signer.signTypedData(this.domain, this.types, {});
+    return sign;
+  }
+
+  @Cron(CronExpression.EVERY_10_SECONDS)
+  async depositCheck() {
+    const contract = new ethers.Contract(
+      process.env.POOL_ADDRESS,
+      balancePoolAbi,
+      this.provider,
+    );
+    const transfer = contract.filters.Deposit(null, null);
+    const block = await this.lastBlockModel.findOne({
+      type: 'deposit',
+    });
+    if (!block) {
+      await this.lastBlockModel.create({ block_number: 0, type: 'deposit' });
+    }
+    const currentBlock = await this.provider.getBlockNumber();
+    const events = await contract.queryFilter(transfer, 0, currentBlock);
+    this.updateDeposit(events);
+    block.block_number = currentBlock;
+    await block.save();
+  }
+
+  async updateDeposit(events: any) {
+    const contract = new ethers.Contract(
+      process.env.POOL_ADDRESS,
+      balancePoolAbi,
+    );
+    if (events.length) {
+      const decodedDepositEvent: ethers.Result =
+        contract.interface.decodeEventLog(
+          events[events.length - 1].fragment,
+          events[events.length - 1].data,
+          events[events.length - 1].topics,
+        );
+      const user = decodedDepositEvent[0];
+      const amount = decodedDepositEvent[1];
+      const userEntity = await this.userRepository.findOne({
+        where: {
+          id: parseInt(user),
+        },
+      });
+      if (userEntity) {
+        userEntity.balance =
+          userEntity.balance + parseFloat(formatEther(amount));
+        await this.userRepository.save(userEntity);
+      }
+    }
+  }
+
+  @Cron(CronExpression.EVERY_10_SECONDS)
+  async withdrawCheck() {
+    const contract = new ethers.Contract(
+      process.env.POOL_ADDRESS,
+      balancePoolAbi,
+      this.provider,
+    );
+    const block = await this.lastBlockModel.findOne({
+      type: 'withdraw',
+    });
+    if (!block) {
+      await this.lastBlockModel.create({ block_number: 0, type: 'withdraw' });
+    }
+    const currentBlock = await this.provider.getBlockNumber();
+    const transfer = contract.filters.Withdrawal(null, null);
+    const withdrwal = await contract.queryFilter(
+      transfer,
+      block.block_number,
+      currentBlock,
+    );
+    if (withdrwal.length) this.removePending(withdrwal);
+    block.block_number = currentBlock;
+    await block.save();
+  }
+
+  async removePending(events: any) {
+    const contract = new ethers.Contract(
+      process.env.POOL_ADDRESS,
+      balancePoolAbi,
+    );
+    if (events.length) {
+      const decodedWithdrawEvent: ethers.Result =
+        contract.interface.decodeEventLog(
+          events[events.length - 1].fragment,
+          events[events.length - 1].data,
+          events[events.length - 1].topics,
+        );
+      const nonce = parseInt(decodedWithdrawEvent[0]);
+      const user = decodedWithdrawEvent[1];
+      const amount = decodedWithdrawEvent[2];
+      await this.pendingList.deleteOne({
+        user_address: RegExp(user, 'i'),
+        nonce: nonce,
+      });
+    }
+  }
+
+  @Cron(CronExpression.EVERY_10_MINUTES)
+  async notExecuted() {
+    const contract = new ethers.Contract(
+      process.env.POOL_ADDRESS,
+      balancePoolAbi,
+      this.provider,
+    );
+    const pending = await this.pendingList.find({
+      createdAt: {
+        $lt: new Date(Date.now() - 600000),
+      },
+    });
   }
 }

@@ -5,6 +5,11 @@ import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from './entities/users.entity';
+import { ScheduleModule } from '@nestjs/schedule';
+import { MongooseModule } from '@nestjs/mongoose';
+import { JwtModule } from '@nestjs/jwt';
+import { LastBlock, LastBlockSchema } from './entities/lastblock.entity';
+import { PendingList, PendingListSchema } from './entities/pending.list';
 
 @Module({
   imports: [
@@ -24,6 +29,20 @@ import { User } from './entities/users.entity';
       entities: [User],
     }),
     TypeOrmModule.forFeature([User]),
+    ScheduleModule.forRoot(),
+    MongooseModule.forRoot(process.env.MONGO_URL),
+    MongooseModule.forFeature([
+      { name: LastBlock.name, schema: LastBlockSchema },
+      {
+        name: PendingList.name,
+        schema: PendingListSchema,
+      },
+    ]),
+    JwtModule.register({
+      global: true,
+      secret: process.env.JWT_SECRET,
+      signOptions: { expiresIn: '60s' },
+    }),
   ],
   controllers: [AppController],
   providers: [AppService],

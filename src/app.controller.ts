@@ -1,13 +1,18 @@
 import { Body, Controller, Post } from '@nestjs/common';
 import { AppService } from './app.service';
-import { SignDto } from './dto/sign.dto';
+import { WithdrawalDto } from './dto/withdrawal.dto';
 
 @Controller()
 export class AppController {
   constructor(private readonly appService: AppService) {}
 
-  @Post()
-  async withdraw(@Body() signDto: SignDto) {
-    return await this.appService.withdraw(signDto);
+  @Post('withdraw')
+  async withdraw(@Body() withdrawalDto: WithdrawalDto) {
+    return await this.appService.withdraw(withdrawalDto);
   }
+
+  // @Post('deposit')
+  // async deposit() {
+  //   return await this.appService.deposit('rijulagarwal0909@llll.com');
+  // }
 }

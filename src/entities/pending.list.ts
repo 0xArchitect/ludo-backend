@@ -1,15 +1,27 @@
-import { Column, Entity } from 'typeorm';
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 
-@Entity()
+@Schema({
+  collection: 'pending_list',
+  timestamps: true,
+})
 export class PendingList {
-  // insert fields here
-  @Column({
-    type: 'varchar',
-  })
-  user_address: number;
+  @Prop({ required: true })
+  user_address: string;
 
-  @Column({
-    type: 'int',
+  @Prop({
+    type: Number,
   })
   amount: number;
+
+  @Prop({
+    type: Number,
+  })
+  timestamp: number;
+
+  @Prop({
+    type: Number,
+  })
+  nonce: number;
 }
+
+export const PendingListSchema = SchemaFactory.createForClass(PendingList);
