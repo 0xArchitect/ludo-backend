@@ -112,8 +112,7 @@ export class AppService {
         nonce: value.nonce,
         userId: userId,
       });
-      user.balance =
-        user.balance - parseFloat(value.withdrawalAmount.toString());
+      user.balance = user.balance - signDto.amount;
       await this.userRepository.save(user);
       await this.cacheManager.set(
         decoded.sub,
