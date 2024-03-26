@@ -10,6 +10,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { JwtModule } from '@nestjs/jwt';
 import { LastBlock, LastBlockSchema } from './entities/lastblock.entity';
 import { PendingList, PendingListSchema } from './entities/pending.list';
+import { ThrottlerModule } from '@nestjs/throttler';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { PendingList, PendingListSchema } from './entities/pending.list';
       autoLoadEntities: false,
       entities: [User],
     }),
+    ThrottlerModule.forRoot(),
     TypeOrmModule.forFeature([User]),
     ScheduleModule.forRoot(),
     MongooseModule.forRoot(process.env.MONGO_URL),

@@ -77,7 +77,7 @@ export class AppService {
         );
       }
       const existingWithdrawPayload: string = await this.cacheManager.get(
-        signDto.user_address,
+        decoded.sub,
       );
       if (existingWithdrawPayload) return JSON.parse(existingWithdrawPayload);
       if (user.balance < signDto.amount) {
@@ -116,7 +116,7 @@ export class AppService {
         user.balance - parseFloat(value.withdrawalAmount.toString());
       await this.userRepository.save(user);
       await this.cacheManager.set(
-        signDto.user_address,
+        decoded.sub,
         JSON.stringify(withdrawPayload),
         300000,
       );
