@@ -48,9 +48,7 @@ export class AppService {
     @InjectModel(PendingList.name)
     private readonly pendingList: Model<PendingList>,
   ) {
-    this.provider = new ethers.JsonRpcProvider(
-      'https://eth-sepolia.g.alchemy.com/v2/IdbA4PP8fCWOYaPZssHe5xo7G6qfB41s',
-    );
+    this.provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
   }
 
   async withdraw(signDto: WithdrawalDto): Promise<WithdrawalResponseDto> {
@@ -107,7 +105,7 @@ export class AppService {
       };
       await this.pendingList.create({
         user_address: value.user,
-        amount: value.withdrawalAmount.toString(),
+        amount: signDto.amount,
         timestamp: value.timestamp,
         nonce: value.nonce,
         userId: userId,
