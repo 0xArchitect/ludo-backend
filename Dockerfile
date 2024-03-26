@@ -50,7 +50,7 @@ FROM node:18-alpine As production
 # Copy the bundled code from the build stage to the production image
 COPY --chown=node:node --from=build /usr/src/app/node_modules ./node_modules
 COPY --chown=node:node --from=build /usr/src/app/dist ./dist
-COPY --chown=node:node --from=build /usr/src/app/oauth-public.key ./src/oauth-public.key
+COPY --chown=node:node --from=build /usr/src/app/src/oauth-public.key ./src/oauth-public.key
 
 
 # Start the server using the production build
