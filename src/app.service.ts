@@ -76,19 +76,8 @@ export class AppService {
           HttpStatus.NOT_FOUND,
         );
       }
-      if (user.wallet_address == '0') {
-        throw new HttpException(
-          {
-            status: HttpStatus.NOT_FOUND,
-            errors: {
-              wallet_address: 'User wallet address not found',
-            },
-          },
-          HttpStatus.NOT_FOUND,
-        );
-      }
       const existingWithdrawPayload: string = await this.cacheManager.get(
-        user.wallet_address,
+        signDto.user_address,
       );
       if (existingWithdrawPayload) return JSON.parse(existingWithdrawPayload);
       if (user.balance < signDto.amount) {
@@ -104,7 +93,7 @@ export class AppService {
       }
       const nonce = Math.round(Math.random() * 9) + Date.now();
       const value = {
-        user: user.wallet_address,
+        user: signDto.user_address,
         withdrawalAmount: ethers.parseEther(signDto.amount.toString()),
         timestamp: Math.floor(Date.now() / 1000),
         nonce: nonce,
@@ -121,12 +110,13 @@ export class AppService {
         amount: value.withdrawalAmount.toString(),
         timestamp: value.timestamp,
         nonce: value.nonce,
+        userId: userId,
       });
       user.balance =
         user.balance - parseFloat(value.withdrawalAmount.toString());
       await this.userRepository.save(user);
       await this.cacheManager.set(
-        user.wallet_address,
+        signDto.user_address,
         JSON.stringify(withdrawPayload),
         300000,
       );
@@ -206,7 +196,11 @@ export class AppService {
       await this.lastBlockModel.create({ block_number: 0, type: 'deposit' });
     }
     const currentBlock = await this.provider.getBlockNumber();
-    const events = await contract.queryFilter(transfer, 0, currentBlock);
+    const events = await contract.queryFilter(
+      transfer,
+      block.block_number,
+      currentBlock,
+    );
     this.updateDeposit(events);
     block.block_number = currentBlock;
     await block.save();
@@ -298,5 +292,10 @@ export class AppService {
         $lt: new Date(Date.now() - 600000),
       },
     });
+    for (const item of pending) {
+      const user = item.user_address;
+      const nonce = item.nonce;
+      // const filters = contract.filters.Withdrawal(nonce, user);
+    }
   }
 }

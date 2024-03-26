@@ -22,6 +22,11 @@ export class PendingList {
     type: Number,
   })
   nonce: number;
+
+  @Prop({
+    type: Number,
+  })
+  userId: number;
 }
 
 export const PendingListSchema = SchemaFactory.createForClass(PendingList);
