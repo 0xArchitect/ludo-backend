@@ -14,6 +14,7 @@ import { JsonWebTokenError, JwtService } from '@nestjs/jwt';
 import { PendingList } from './entities/pending.list';
 import * as fs from 'fs';
 import * as path from 'path';
+import { BalanceDto } from './dto/balance.dto';
 const publicKey = fs.readFileSync(
   path.resolve(__dirname, '..', 'src', 'oauth-public.key'),
   'utf8',
@@ -49,6 +50,61 @@ export class AppService {
     private readonly pendingList: Model<PendingList>,
   ) {
     this.provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
+  }
+
+  async balance(balanceDto: BalanceDto) {
+    try {
+      const decoded = this.jwtService.verify(balanceDto.accessToken, {
+        algorithms: ['RS256'],
+        secret: publicKey,
+      });
+      const userId = parseInt(decoded.sub);
+      const user = await this.userRepository.findOne({
+        where: {
+          id: userId,
+        },
+      });
+      if (!user) {
+        throw new HttpException(
+          {
+            status: HttpStatus.NOT_FOUND,
+            errors: {
+              message: 'User not found',
+            },
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+      console.log(user);
+      return {
+        balance: user.balance,
+        userId: userId,
+      };
+    } catch (e) {
+      if (e instanceof JsonWebTokenError) {
+        throw new HttpException(
+          {
+            status: HttpStatus.UNAUTHORIZED,
+            errors: {
+              message: e.message,
+            },
+          },
+          HttpStatus.UNAUTHORIZED,
+        );
+      }
+      if (e instanceof HttpException) {
+        throw e;
+      }
+      throw new HttpException(
+        {
+          status: HttpStatus.UNPROCESSABLE_ENTITY,
+          errors: {
+            [e.argument]: e.shortMessage,
+          },
+        },
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
   }
 
   async withdraw(signDto: WithdrawalDto): Promise<WithdrawalResponseDto> {

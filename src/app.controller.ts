@@ -1,7 +1,8 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { AppService } from './app.service';
 import { WithdrawalDto, WithdrawalResponseDto } from './dto/withdrawal.dto';
 import { Throttle } from '@nestjs/throttler';
+import { BalanceDto, BalanceResponseDto } from './dto/balance.dto';
 
 @Controller()
 export class AppController {
@@ -15,8 +16,8 @@ export class AppController {
     return await this.appService.withdraw(withdrawalDto);
   }
 
-  // @Post('deposit')
-  // async deposit() {
-  //   return await this.appService.deposit('rijulagarwal0909@llll.com');
-  // }
+  @Get('balance')
+  async deposit(@Query() query: BalanceDto): Promise<BalanceResponseDto> {
+    return await this.appService.balance(query);
+  }
 }
