@@ -248,7 +248,6 @@ export class AppService {
       await this.lastBlockModel.create({ block_number: 0, type: 'deposit' });
     }
     const currentBlock = await this.provider.getBlockNumber();
-    console.log(currentBlock, 'currentBlock', block.block_number, 'block');
     const events = await contract.queryFilter(
       transfer,
       block.block_number,
