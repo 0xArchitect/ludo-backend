@@ -75,7 +75,6 @@ export class AppService {
           HttpStatus.NOT_FOUND,
         );
       }
-      console.log(user);
       return {
         balance: user.balance,
         userId: userId,
@@ -234,7 +233,7 @@ export class AppService {
     return sign;
   }
 
-  @Cron(CronExpression.EVERY_10_SECONDS)
+  @Cron(CronExpression.EVERY_30_SECONDS)
   async depositCheck() {
     const contract = new ethers.Contract(
       process.env.POOL_ADDRESS,
@@ -249,6 +248,7 @@ export class AppService {
       await this.lastBlockModel.create({ block_number: 0, type: 'deposit' });
     }
     const currentBlock = await this.provider.getBlockNumber();
+    console.log(currentBlock, 'currentBlock', block.block_number, 'block');
     const events = await contract.queryFilter(
       transfer,
       block.block_number,
@@ -278,15 +278,17 @@ export class AppService {
           id: parseInt(user),
         },
       });
+      console.log(userEntity.balance, 'before');
       if (userEntity) {
         userEntity.balance =
           userEntity.balance + parseFloat(formatEther(amount));
+        console.log(userEntity.balance, 'after');
         await this.userRepository.save(userEntity);
       }
     }
   }
 
-  @Cron(CronExpression.EVERY_10_SECONDS)
+  @Cron(CronExpression.EVERY_30_SECONDS)
   async withdrawCheck() {
     const contract = new ethers.Contract(
       process.env.POOL_ADDRESS,
