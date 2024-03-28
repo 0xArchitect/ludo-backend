@@ -20,4 +20,9 @@ export class AppController {
   async deposit(@Query() query: BalanceDto): Promise<BalanceResponseDto> {
     return await this.appService.balance(query);
   }
+
+  @Get('health')
+  health(): string {
+    return 'OK';
+  }
 }

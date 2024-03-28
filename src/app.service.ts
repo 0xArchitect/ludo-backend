@@ -130,7 +130,7 @@ export class AppService {
         );
       }
       const existingWithdrawPayload: string = await this.cacheManager.get(
-        decoded.sub,
+        `${decoded.sub}${signDto.amount}`,
       );
       if (existingWithdrawPayload) return JSON.parse(existingWithdrawPayload);
       if (user.balance < signDto.amount) {
@@ -168,7 +168,7 @@ export class AppService {
       user.balance = user.balance - signDto.amount;
       await this.userRepository.save(user);
       await this.cacheManager.set(
-        decoded.sub,
+        `${decoded.sub}${signDto.amount}`,
         JSON.stringify(withdrawPayload),
         300000,
       );
@@ -327,10 +327,15 @@ export class AppService {
       const nonce = parseInt(decodedWithdrawEvent[0]);
       const user = decodedWithdrawEvent[1];
       const amount = decodedWithdrawEvent[2];
+      const pending = await this.pendingList.findOne({
+        user_address: RegExp(user, 'i'),
+        nonce: nonce,
+      });
       await this.pendingList.deleteOne({
         user_address: RegExp(user, 'i'),
         nonce: nonce,
       });
+      this.cacheManager.del(`${pending.userId}${amount}`);
     }
   }
 
