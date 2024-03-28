@@ -253,7 +253,7 @@ export class AppService {
       block.block_number,
       currentBlock,
     );
-    this.updateDeposit(events);
+    await this.updateDeposit(events);
     block.block_number = currentBlock;
     await block.save();
   }
@@ -307,7 +307,7 @@ export class AppService {
       block.block_number,
       currentBlock,
     );
-    if (withdrwal.length) this.removePending(withdrwal);
+    if (withdrwal.length) await this.removePending(withdrwal);
     block.block_number = currentBlock;
     await block.save();
   }
