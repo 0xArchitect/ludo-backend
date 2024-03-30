@@ -339,7 +339,7 @@ export class AppService {
         user_address: RegExp(user, 'i'),
         nonce: nonce,
       });
-      this.cacheManager.del(`${pending.userId}${amount}`);
+      if (pending) await this.cacheManager.del(`${pending.userId}${amount}`);
     }
   }
 
