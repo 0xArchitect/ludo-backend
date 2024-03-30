@@ -253,37 +253,41 @@ export class AppService {
       block.block_number,
       currentBlock,
     );
-    await this.updateDeposit(events);
+    this.updateDeposit(events);
     block.block_number = currentBlock;
     await block.save();
   }
 
   async updateDeposit(events: any) {
-    const contract = new ethers.Contract(
-      process.env.POOL_ADDRESS,
-      balancePoolAbi,
-    );
-    if (events.length) {
-      const decodedDepositEvent: ethers.Result =
-        contract.interface.decodeEventLog(
-          events[events.length - 1].fragment,
-          events[events.length - 1].data,
-          events[events.length - 1].topics,
-        );
-      const user = decodedDepositEvent[0];
-      const amount = decodedDepositEvent[1];
-      const userEntity = await this.userRepository.findOne({
-        where: {
-          id: parseInt(user),
-        },
-      });
-      console.log(userEntity.balance, 'before');
-      if (userEntity) {
-        userEntity.balance =
-          userEntity.balance + parseFloat(formatEther(amount));
-        console.log(userEntity.balance, 'after');
-        await this.userRepository.save(userEntity);
+    try {
+      const contract = new ethers.Contract(
+        process.env.POOL_ADDRESS,
+        balancePoolAbi,
+      );
+      if (events.length) {
+        const decodedDepositEvent: ethers.Result =
+          contract.interface.decodeEventLog(
+            events[events.length - 1].fragment,
+            events[events.length - 1].data,
+            events[events.length - 1].topics,
+          );
+        const user = decodedDepositEvent[0];
+        const amount = decodedDepositEvent[1];
+        const userEntity = await this.userRepository.findOne({
+          where: {
+            id: parseInt(user),
+          },
+        });
+        console.log(userEntity.balance, 'beforeDeposit', user);
+        if (userEntity) {
+          userEntity.balance =
+            userEntity.balance + parseFloat(formatEther(amount));
+          await this.userRepository.save(userEntity);
+          console.log(userEntity.balance, 'afterDeposit', user);
+        }
       }
+    } catch (e) {
+      console.log(e);
     }
   }
 
@@ -307,7 +311,7 @@ export class AppService {
       block.block_number,
       currentBlock,
     );
-    if (withdrwal.length) await this.removePending(withdrwal);
+    if (withdrwal.length) this.removePending(withdrwal);
     block.block_number = currentBlock;
     await block.save();
   }
@@ -366,6 +370,11 @@ export class AppService {
           userEntity.balance = userEntity.balance + item.amount;
           await this.userRepository.save(userEntity);
         }
+        await this.pendingList.deleteOne({
+          user_address: item.user_address,
+          nonce: item.nonce,
+        });
+      } else {
         await this.pendingList.deleteOne({
           user_address: item.user_address,
           nonce: item.nonce,
