@@ -259,35 +259,51 @@ export class AppService {
   }
 
   async updateDeposit(events: any) {
-    try {
-      const contract = new ethers.Contract(
-        process.env.POOL_ADDRESS,
-        balancePoolAbi,
-      );
-      if (events.length) {
-        const decodedDepositEvent: ethers.Result =
-          contract.interface.decodeEventLog(
-            events[events.length - 1].fragment,
-            events[events.length - 1].data,
-            events[events.length - 1].topics,
-          );
-        const user = decodedDepositEvent[0];
-        const amount = decodedDepositEvent[1];
+    const contract = new ethers.Contract(
+      process.env.POOL_ADDRESS,
+      balancePoolAbi,
+    );
+    if (events.length) {
+      const decodedDepositEvent: ethers.Result =
+        contract.interface.decodeEventLog(
+          events[events.length - 1].fragment,
+          events[events.length - 1].data,
+          events[events.length - 1].topics,
+        );
+      const user = decodedDepositEvent[0];
+      const amount = decodedDepositEvent[1];
+      console.log(`User: ${user} deposited ${amount}`);
+      try {
         const userEntity = await this.userRepository.findOne({
           where: {
             id: parseInt(user),
           },
         });
-        console.log(userEntity.balance, 'beforeDeposit', user);
+        console.log(
+          `User ${user} balance before deposit ${parseFloat(
+            formatEther(amount),
+          )} is`,
+          userEntity.balance,
+        );
         if (userEntity) {
           userEntity.balance =
             userEntity.balance + parseFloat(formatEther(amount));
           await this.userRepository.save(userEntity);
-          console.log(userEntity.balance, 'afterDeposit', user);
+          console.log(
+            `User: ${user} balance after deposit ${parseFloat(
+              formatEther(amount),
+            )} is ${userEntity.balance} `,
+          );
         }
+      } catch (e) {
+        console.log('Updation Error', e);
+        console.log(
+          'Failed: User',
+          user,
+          'Amount',
+          parseFloat(formatEther(amount)),
+        );
       }
-    } catch (e) {
-      console.log(e);
     }
   }
 
