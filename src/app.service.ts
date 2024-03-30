@@ -339,24 +339,31 @@ export class AppService {
       balancePoolAbi,
     );
     if (events.length) {
-      const decodedWithdrawEvent: ethers.Result =
-        contract.interface.decodeEventLog(
-          events[events.length - 1].fragment,
-          events[events.length - 1].data,
-          events[events.length - 1].topics,
-        );
-      const nonce = parseInt(decodedWithdrawEvent[0]);
-      const user = decodedWithdrawEvent[1];
-      const amount = decodedWithdrawEvent[2];
-      const pending = await this.pendingList.findOne({
-        user_address: RegExp(user, 'i'),
-        nonce: nonce,
-      });
-      await this.pendingList.deleteOne({
-        user_address: RegExp(user, 'i'),
-        nonce: nonce,
-      });
-      if (pending) await this.cacheManager.del(`${pending.userId}${amount}`);
+      for (const event of events) {
+        const decodedWithdrawEvent: ethers.Result =
+          contract.interface.decodeEventLog(
+            event.fragment,
+            event.data,
+            event.topics,
+          );
+        const nonce = parseInt(decodedWithdrawEvent[0]);
+        const user = decodedWithdrawEvent[1];
+        const amount = decodedWithdrawEvent[2];
+        try {
+          const pending = await this.pendingList.findOneAndDelete({
+            user_address: RegExp(user, 'i'),
+            nonce: nonce,
+          });
+          await this.pendingList.deleteOne({
+            user_address: RegExp(user, 'i'),
+            nonce: nonce,
+          });
+          if (pending)
+            await this.cacheManager.del(`${pending.userId}${amount}`);
+        } catch (e) {
+          console.log('removePending Error', e);
+        }
+      }
     }
   }
 
