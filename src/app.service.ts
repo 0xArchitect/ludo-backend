@@ -112,67 +112,75 @@ export class AppService {
         algorithms: ['RS256'],
         secret: publicKey,
       });
-      const userId = parseInt(decoded.sub);
-      const user = await this.userRepository.findOne({
-        where: {
-          id: userId,
-        },
-      });
-      if (!user) {
-        throw new HttpException(
-          {
-            status: HttpStatus.NOT_FOUND,
-            errors: {
-              message: 'User not found',
-            },
-          },
-          HttpStatus.NOT_FOUND,
-        );
-      }
       const existingWithdrawPayload: string = await this.cacheManager.get(
         `${decoded.sub}${signDto.amount}`,
       );
       if (existingWithdrawPayload) return JSON.parse(existingWithdrawPayload);
-      if (user.balance < signDto.amount) {
-        throw new HttpException(
-          {
-            status: HttpStatus.UNPROCESSABLE_ENTITY,
-            errors: {
-              amount: 'Insufficient balance',
+      const userId = parseInt(decoded.sub);
+      await this.userRepository.manager.transaction(
+        async (transactionalEntityManager) => {
+          const userEntity = await transactionalEntityManager.findOne(User, {
+            where: {
+              id: userId,
             },
-          },
-          HttpStatus.UNPROCESSABLE_ENTITY,
-        );
-      }
-      const nonce = Math.round(Math.random() * 9) + Date.now();
-      const value = {
-        user: signDto.user_address,
-        withdrawalAmount: ethers.parseEther(signDto.amount.toString()),
-        timestamp: Math.floor(Date.now() / 1000),
-        nonce: nonce,
-      };
-      const signer = new Wallet(process.env.PRIVATE_KEY);
-      const sign = await signer.signTypedData(this.domain, this.types, value);
-      const withdrawPayload = {
-        sign,
-        ...value,
-        withdrawalAmount: value.withdrawalAmount.toString(),
-      };
-      await this.pendingList.create({
-        user_address: value.user,
-        amount: signDto.amount,
-        timestamp: value.timestamp,
-        nonce: value.nonce,
-        userId: userId,
-      });
-      user.balance = user.balance - signDto.amount;
-      await this.userRepository.save(user);
-      await this.cacheManager.set(
-        `${decoded.sub}${signDto.amount}`,
-        JSON.stringify(withdrawPayload),
-        300000,
+          });
+          if (!userEntity) {
+            throw new HttpException(
+              {
+                status: HttpStatus.NOT_FOUND,
+                errors: {
+                  message: 'User not found',
+                },
+              },
+              HttpStatus.NOT_FOUND,
+            );
+          }
+          if (userEntity.balance < signDto.amount) {
+            throw new HttpException(
+              {
+                status: HttpStatus.UNPROCESSABLE_ENTITY,
+                errors: {
+                  amount: 'Insufficient balance',
+                },
+              },
+              HttpStatus.UNPROCESSABLE_ENTITY,
+            );
+          }
+          userEntity.balance -= signDto.amount;
+          const nonce = Math.round(Math.random() * 9) + Date.now();
+          const value = {
+            user: signDto.user_address,
+            withdrawalAmount: ethers.parseEther(signDto.amount.toString()),
+            timestamp: Math.floor(Date.now() / 1000),
+            nonce: nonce,
+          };
+          const signer = new Wallet(process.env.PRIVATE_KEY);
+          const sign = await signer.signTypedData(
+            this.domain,
+            this.types,
+            value,
+          );
+          const withdrawPayload = {
+            sign,
+            ...value,
+            withdrawalAmount: value.withdrawalAmount.toString(),
+          };
+          await this.pendingList.create({
+            user_address: value.user,
+            amount: signDto.amount,
+            timestamp: value.timestamp,
+            nonce: value.nonce,
+            userId: userId,
+          });
+          await transactionalEntityManager.save(userEntity);
+          await this.cacheManager.set(
+            `${decoded.sub}${signDto.amount}`,
+            JSON.stringify(withdrawPayload),
+            300000,
+          );
+          return withdrawPayload;
+        },
       );
-      return withdrawPayload;
     } catch (e) {
       if (e instanceof JsonWebTokenError) {
         throw new HttpException(
@@ -251,7 +259,7 @@ export class AppService {
     const events = await contract.queryFilter(
       transfer,
       block.block_number,
-      currentBlock,
+      currentBlock - 1,
     );
     this.updateDeposit(events);
     block.block_number = currentBlock;
@@ -264,45 +272,38 @@ export class AppService {
       balancePoolAbi,
     );
     if (events.length) {
-      const decodedDepositEvent: ethers.Result =
-        contract.interface.decodeEventLog(
-          events[events.length - 1].fragment,
-          events[events.length - 1].data,
-          events[events.length - 1].topics,
-        );
-      const user = decodedDepositEvent[0];
-      const amount = decodedDepositEvent[1];
-      console.log(`User: ${user} deposited ${amount}`);
-      try {
-        const userEntity = await this.userRepository.findOne({
-          where: {
-            id: parseInt(user),
-          },
-        });
-        console.log(
-          `User ${user} balance before deposit ${parseFloat(
-            formatEther(amount),
-          )} is`,
-          userEntity.balance,
-        );
-        if (userEntity) {
-          userEntity.balance =
-            userEntity.balance + parseFloat(formatEther(amount));
-          await this.userRepository.save(userEntity);
+      for (const event of events) {
+        const decodedDepositEvent: ethers.Result =
+          contract.interface.decodeEventLog(
+            event.fragment,
+            event.data,
+            event.topics,
+          );
+        const user = decodedDepositEvent[0];
+        const amount = decodedDepositEvent[1];
+        try {
+          await this.userRepository.manager.transaction(
+            async (transactionalEntityManager) => {
+              const userEntity = await transactionalEntityManager.findOne(
+                User,
+                {
+                  where: {
+                    id: parseInt(user),
+                  },
+                },
+              );
+              if (userEntity) {
+                userEntity.balance += parseFloat(formatEther(amount));
+                await transactionalEntityManager.save(userEntity);
+              }
+            },
+          );
+        } catch (e) {
           console.log(
-            `User: ${user} balance after deposit ${parseFloat(
-              formatEther(amount),
-            )} is ${userEntity.balance} `,
+            `Error in deposit ${user} ${parseFloat(formatEther(amount))}`,
+            e,
           );
         }
-      } catch (e) {
-        console.log('Updation Error', e);
-        console.log(
-          'Failed: User',
-          user,
-          'Amount',
-          parseFloat(formatEther(amount)),
-        );
       }
     }
   }
@@ -325,7 +326,7 @@ export class AppService {
     const withdrwal = await contract.queryFilter(
       transfer,
       block.block_number,
-      currentBlock,
+      currentBlock - 1,
     );
     if (withdrwal.length) this.removePending(withdrwal);
     block.block_number = currentBlock;
@@ -377,24 +378,30 @@ export class AppService {
       const filters = contract.filters.Withdrawal(nonce, user);
       const events = await contract.queryFilter(filters);
       if (!events.length) {
-        const userEntity = await this.userRepository.findOne({
-          where: {
-            id: item.userId,
-          },
-        });
-        if (userEntity) {
-          userEntity.balance = userEntity.balance + item.amount;
-          await this.userRepository.save(userEntity);
+        try {
+          await this.userRepository.manager.transaction(
+            async (transactionalEntityManager) => {
+              const userEntity = await transactionalEntityManager.findOne(
+                User,
+                {
+                  where: {
+                    id: item.userId,
+                  },
+                },
+              );
+              if (userEntity) {
+                userEntity.balance += item.amount;
+                await transactionalEntityManager.save(userEntity);
+              }
+            },
+          );
+          await this.pendingList.deleteOne({
+            user_address: item.user_address,
+            nonce: item.nonce,
+          });
+        } catch (e) {
+          console.log('notExecuted Error', e);
         }
-        await this.pendingList.deleteOne({
-          user_address: item.user_address,
-          nonce: item.nonce,
-        });
-      } else {
-        await this.pendingList.deleteOne({
-          user_address: item.user_address,
-          nonce: item.nonce,
-        });
       }
     }
   }
