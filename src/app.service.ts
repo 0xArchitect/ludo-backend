@@ -362,12 +362,10 @@ export class AppService {
             user_address: RegExp(user, 'i'),
             nonce: nonce,
           });
-          await this.pendingList.deleteOne({
-            user_address: RegExp(user, 'i'),
-            nonce: nonce,
-          });
           if (pending)
-            await this.cacheManager.del(`${pending.userId}${amount}`);
+            await this.cacheManager.del(
+              `${pending.userId}${parseFloat(formatEther(amount))}`,
+            );
         } catch (e) {
           console.log('removePending Error', e);
         }
