@@ -1,7 +1,7 @@
 import { HttpException, HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { JsonRpcProvider, Wallet, ethers, formatEther } from 'ethers';
 import { WithdrawalDto, WithdrawalResponseDto } from './dto/withdrawal.dto';
-import { Repository } from 'typeorm';
+import { Repository, getConnection } from 'typeorm';
 import { Cache, CACHE_MANAGER } from '@nestjs/cache-manager';
 import { InjectRepository } from '@nestjs/typeorm';
 import { User } from './entities/users.entity';
@@ -123,6 +123,9 @@ export class AppService {
             where: {
               id: userId,
             },
+            lock: {
+              mode: 'pessimistic_write',
+            },
           });
           if (!userEntity) {
             throw new HttpException(
@@ -196,6 +199,7 @@ export class AppService {
       if (e instanceof HttpException) {
         throw e;
       }
+      console.log(e);
       throw new HttpException(
         {
           status: HttpStatus.UNPROCESSABLE_ENTITY,
@@ -289,6 +293,9 @@ export class AppService {
                 {
                   where: {
                     id: parseInt(user),
+                  },
+                  lock: {
+                    mode: 'pessimistic_write',
                   },
                 },
               );
@@ -393,6 +400,9 @@ export class AppService {
                 {
                   where: {
                     id: item.userId,
+                  },
+                  lock: {
+                    mode: 'pessimistic_write',
                   },
                 },
               );
