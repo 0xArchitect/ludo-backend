@@ -117,7 +117,7 @@ export class AppService {
       );
       if (existingWithdrawPayload) return JSON.parse(existingWithdrawPayload);
       const userId = parseInt(decoded.sub);
-      await this.userRepository.manager.transaction(
+      const withdrawPayload = await this.userRepository.manager.transaction(
         async (transactionalEntityManager) => {
           const userEntity = await transactionalEntityManager.findOne(User, {
             where: {
@@ -184,6 +184,7 @@ export class AppService {
           return withdrawPayload;
         },
       );
+      return withdrawPayload;
     } catch (e) {
       if (e instanceof JsonWebTokenError) {
         throw new HttpException(
