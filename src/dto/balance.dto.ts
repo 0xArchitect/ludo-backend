@@ -7,4 +7,5 @@ export class BalanceDto {
 export class BalanceResponseDto {
   balance: number;
   userId: number;
+  pendingBalance: number;
 }

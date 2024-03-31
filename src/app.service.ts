@@ -64,6 +64,7 @@ export class AppService {
           id: userId,
         },
       });
+      const pendingBalance = await this.pendingBalance(userId);
       if (!user) {
         throw new HttpException(
           {
@@ -78,6 +79,7 @@ export class AppService {
       return {
         balance: user.balance,
         userId: userId,
+        pendingBalance,
       };
     } catch (e) {
       if (e instanceof JsonWebTokenError) {
@@ -104,6 +106,15 @@ export class AppService {
         HttpStatus.UNPROCESSABLE_ENTITY,
       );
     }
+  }
+
+  async pendingBalance(userId: number) {
+    const pending = await this.pendingList.find({
+      userId: userId,
+    });
+    return pending.reduce((acc, item) => {
+      return acc + item.amount;
+    }, 0);
   }
 
   async withdraw(signDto: WithdrawalDto): Promise<WithdrawalResponseDto> {
