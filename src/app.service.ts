@@ -1,5 +1,5 @@
 import { HttpException, HttpStatus, Inject, Injectable } from '@nestjs/common';
-import { JsonRpcProvider, Wallet, ethers, formatEther } from 'ethers';
+import { JsonRpcProvider, Wallet, ethers, formatEther, EventLog } from 'ethers';
 import { WithdrawalDto, WithdrawalResponseDto } from './dto/withdrawal.dto';
 import { Repository, getConnection } from 'typeorm';
 import { Cache, CACHE_MANAGER } from '@nestjs/cache-manager';
@@ -15,6 +15,7 @@ import { PendingList } from './entities/pending.list';
 import * as fs from 'fs';
 import * as path from 'path';
 import { BalanceDto } from './dto/balance.dto';
+import { Transactions } from './entities/transactions.entity';
 const publicKey = fs.readFileSync(
   path.resolve(__dirname, '..', 'src', 'oauth-public.key'),
   'utf8',
@@ -48,6 +49,8 @@ export class AppService {
     private readonly lastBlockModel: Model<LastBlock>,
     @InjectModel(PendingList.name)
     private readonly pendingList: Model<PendingList>,
+    @InjectModel(Transactions.name)
+    private readonly transactionsModel: Model<Transactions>,
   ) {
     this.provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
   }
@@ -211,7 +214,7 @@ export class AppService {
       if (e instanceof HttpException) {
         throw e;
       }
-      console.log(e);
+      console.log('Error in withdraw', e);
       throw new HttpException(
         {
           status: HttpStatus.UNPROCESSABLE_ENTITY,
@@ -222,39 +225,6 @@ export class AppService {
         HttpStatus.UNPROCESSABLE_ENTITY,
       );
     }
-  }
-
-  async deposit(useremail: string) {
-    const user = await this.userRepository.findOne({
-      where: {
-        email: useremail,
-      },
-    });
-    if (!user) {
-      throw new HttpException(
-        {
-          status: HttpStatus.NOT_FOUND,
-          errors: {
-            message: 'User not found',
-          },
-        },
-        HttpStatus.NOT_FOUND,
-      );
-    }
-    if (user.wallet_address == '0') {
-      throw new HttpException(
-        {
-          status: HttpStatus.NOT_FOUND,
-          errors: {
-            wallet_address: 'User wallet address not found',
-          },
-        },
-        HttpStatus.NOT_FOUND,
-      );
-    }
-    const signer = new Wallet(process.env.PRIVATE_KEY);
-    const sign = await signer.signTypedData(this.domain, this.types, {});
-    return sign;
   }
 
   @Cron(CronExpression.EVERY_30_SECONDS)
@@ -288,7 +258,8 @@ export class AppService {
       balancePoolAbi,
     );
     if (events.length) {
-      for (const event of events) {
+      for (const e of events) {
+        const event: EventLog = e;
         const decodedDepositEvent: ethers.Result =
           contract.interface.decodeEventLog(
             event.fragment,
@@ -297,6 +268,8 @@ export class AppService {
           );
         const user = decodedDepositEvent[0];
         const amount = decodedDepositEvent[1];
+        const session = await this.transactionsModel.startSession();
+        session.startTransaction();
         try {
           await this.userRepository.manager.transaction(
             async (transactionalEntityManager) => {
@@ -311,17 +284,41 @@ export class AppService {
                   },
                 },
               );
+              const alreadyDeposited = await this.transactionsModel.findOne(
+                {
+                  txHash: event.transactionHash.toUpperCase(),
+                },
+                {},
+                { session },
+              );
+              if (alreadyDeposited) throw new Error('Already deposited');
               if (userEntity) {
                 userEntity.balance += parseFloat(formatEther(amount));
                 await transactionalEntityManager.save(userEntity);
+                await this.transactionsModel.create(
+                  [
+                    {
+                      userId: parseInt(user),
+                      address: event.address.toUpperCase(),
+                      txHash: event.transactionHash.toUpperCase(),
+                      amount: parseFloat(formatEther(amount)),
+                      type: event.eventName,
+                    },
+                  ],
+                  { session },
+                );
+                await session.commitTransaction();
               }
             },
           );
         } catch (e) {
+          await session.abortTransaction();
           console.log(
             `Error in deposit ${user} ${parseFloat(formatEther(amount))}`,
             e,
           );
+        } finally {
+          await session.endSession();
         }
       }
     }
@@ -368,17 +365,37 @@ export class AppService {
         const nonce = parseInt(decodedWithdrawEvent[0]);
         const user = decodedWithdrawEvent[1];
         const amount = decodedWithdrawEvent[2];
+        const session = await this.transactionsModel.startSession();
+        session.startTransaction();
         try {
-          const pending = await this.pendingList.findOneAndDelete({
+          const pending = await this.pendingList.findOne({
             user_address: RegExp(user, 'i'),
             nonce: nonce,
           });
-          if (pending)
+          await pending.deleteOne({ session });
+          if (pending) {
             await this.cacheManager.del(
               `${pending.userId}${parseFloat(formatEther(amount))}`,
             );
+            await this.transactionsModel.create(
+              [
+                {
+                  userId: pending.userId,
+                  address: event.address.toUpperCase(),
+                  txHash: event.transactionHash.toUpperCase(),
+                  amount: parseFloat(formatEther(amount)),
+                  type: event.eventName,
+                },
+              ],
+              { session },
+            );
+          }
+          await session.commitTransaction();
         } catch (e) {
+          await session.abortTransaction();
           console.log('removePending Error', e);
+        } finally {
+          await session.endSession();
         }
       }
     }
@@ -429,7 +446,84 @@ export class AppService {
         } catch (e) {
           console.log('notExecuted Error', e);
         }
+      } else {
+        const session = await this.transactionsModel.startSession();
+        session.startTransaction();
+        try {
+          const event: EventLog = await this.transactionsModel.findOne({
+            txHash: events[0].transactionHash.toUpperCase(),
+          });
+          if (!event) {
+            await this.transactionsModel.create(
+              [
+                {
+                  userId: item.userId,
+                  address: event.address.toUpperCase(),
+                  txHash: event.transactionHash.toUpperCase(),
+                  amount: item.amount,
+                  type: event.eventName,
+                },
+              ],
+              { session },
+            );
+            await session.commitTransaction();
+          }
+        } catch (e) {
+          await session.abortTransaction();
+        } finally {
+          await session.endSession();
+        }
       }
+    }
+  }
+
+  async transactions(query: any) {
+    try {
+      const decoded = this.jwtService.verify(query.accessToken, {
+        algorithms: ['RS256'],
+        secret: publicKey,
+      });
+      const userId = parseInt(decoded.sub);
+      const transaction = await this.transactionsModel
+        .find({
+          userId,
+        })
+        .sort({ createdAt: -1 })
+        .skip(query.offset)
+        .limit(query.limit);
+      return transaction.map((item) => {
+        return {
+          amount: item.amount,
+          address: item.address,
+          txHash: item.txHash,
+          type: item.type,
+          createdAt: item.createdAt,
+        };
+      });
+    } catch (e) {
+      if (e instanceof JsonWebTokenError) {
+        throw new HttpException(
+          {
+            status: HttpStatus.UNAUTHORIZED,
+            errors: {
+              message: e.message,
+            },
+          },
+          HttpStatus.UNAUTHORIZED,
+        );
+      }
+      if (e instanceof HttpException) {
+        throw e;
+      }
+      throw new HttpException(
+        {
+          status: HttpStatus.UNPROCESSABLE_ENTITY,
+          errors: {
+            [e.argument]: e.shortMessage,
+          },
+        },
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
     }
   }
 }

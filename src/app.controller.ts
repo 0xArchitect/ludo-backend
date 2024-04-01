@@ -3,6 +3,10 @@ import { AppService } from './app.service';
 import { WithdrawalDto, WithdrawalResponseDto } from './dto/withdrawal.dto';
 import { Throttle } from '@nestjs/throttler';
 import { BalanceDto, BalanceResponseDto } from './dto/balance.dto';
+import {
+  QueryTransactionDto,
+  QueryTransactionResponseDto,
+} from './dto/query-transaction.dto';
 
 @Controller()
 export class AppController {
@@ -24,5 +28,12 @@ export class AppController {
   @Get('health')
   health(): string {
     return 'OK';
+  }
+
+  @Get('transactions')
+  async transactions(
+    @Query() query: QueryTransactionDto,
+  ): Promise<QueryTransactionResponseDto[]> {
+    return await this.appService.transactions(query);
   }
 }

@@ -11,6 +11,10 @@ import { JwtModule } from '@nestjs/jwt';
 import { LastBlock, LastBlockSchema } from './entities/lastblock.entity';
 import { PendingList, PendingListSchema } from './entities/pending.list';
 import { ThrottlerModule } from '@nestjs/throttler';
+import {
+  Transactions,
+  transactionsSchema,
+} from './entities/transactions.entity';
 
 @Module({
   imports: [
@@ -35,6 +39,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
     MongooseModule.forRoot(process.env.MONGO_URL),
     MongooseModule.forFeature([
       { name: LastBlock.name, schema: LastBlockSchema },
+      { name: Transactions.name, schema: transactionsSchema },
       {
         name: PendingList.name,
         schema: PendingListSchema,
