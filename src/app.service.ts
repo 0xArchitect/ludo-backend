@@ -153,7 +153,7 @@ export class AppService {
               HttpStatus.NOT_FOUND,
             );
           }
-          if (!userEntity?.google_2fa) {
+          if (!userEntity?.google2fa_secret) {
             throw new HttpException(
               {
                 status: HttpStatus.UNPROCESSABLE_ENTITY,
@@ -165,8 +165,9 @@ export class AppService {
             );
           }
           const verified = speakeasy.totp.verify({
-            secret: userEntity.google_2fa,
+            secret: userEntity.google2fa_secret,
             otp: signDto.otp,
+            encoding: 'base32',
           });
           if (!verified)
             throw new HttpException(

@@ -31,5 +31,5 @@ export class User {
   wallet_address: string;
 
   @Column()
-  google_2fa: string;
+  google2fa_secret: string;
 }
