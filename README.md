@@ -58,6 +58,15 @@ $ pnpm run test:e2e
 $ pnpm run test:cov
 ```
 
+
+## Deployment on container
+.env.example file contains all the required environment variables to run the backend.
+
+Docker file is added to build the package and provide the required environment to run.
+
+
+
+
 ## Support
 
 Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
