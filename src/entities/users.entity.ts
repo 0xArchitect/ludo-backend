@@ -29,4 +29,7 @@ export class User {
     default: '0',
   })
   wallet_address: string;
+
+  @Column()
+  google_2fa: string;
 }

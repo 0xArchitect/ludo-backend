@@ -15,6 +15,7 @@ import { PendingList } from './entities/pending.list';
 import * as fs from 'fs';
 import * as path from 'path';
 import { BalanceDto } from './dto/balance.dto';
+import * as speakeasy from 'speakeasy';
 import { Transactions } from './entities/transactions.entity';
 const publicKey = fs.readFileSync(
   path.resolve(__dirname, '..', 'src', 'oauth-public.key'),
@@ -152,6 +153,31 @@ export class AppService {
               HttpStatus.NOT_FOUND,
             );
           }
+          if (!userEntity?.google_2fa) {
+            throw new HttpException(
+              {
+                status: HttpStatus.UNPROCESSABLE_ENTITY,
+                errors: {
+                  otp: '2FA not is not setuped.',
+                },
+              },
+              HttpStatus.UNPROCESSABLE_ENTITY,
+            );
+          }
+          const verified = speakeasy.totp.verify({
+            secret: userEntity.google_2fa,
+            otp: signDto.otp,
+          });
+          if (!verified)
+            throw new HttpException(
+              {
+                status: HttpStatus.UNAUTHORIZED,
+                errors: {
+                  otp: 'Invalid OTP',
+                },
+              },
+              HttpStatus.UNAUTHORIZED,
+            );
           if (userEntity.balance < signDto.amount) {
             throw new HttpException(
               {

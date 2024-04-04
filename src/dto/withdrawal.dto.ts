@@ -10,6 +10,9 @@ export class WithdrawalDto {
 
   @IsString()
   user_address: string;
+
+  @IsString()
+  otp: string;
 }
 export class WithdrawalResponseDto {
   sign: string;
