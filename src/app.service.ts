@@ -28,9 +28,9 @@ if (!publicKey) {
 export class AppService {
   private provider: JsonRpcProvider;
   private domain = {
-    name: 'LudoBalancePool',
-    version: '1',
-    chainId: 11155111,
+    name: process.env.SIGNER_NAME,
+    version: process.env.SIGNER_VERSION,
+    chainId: +process.env.CHAIN_ID,
     verifyingContract: process.env.POOL_ADDRESS,
   };
   private types = {
@@ -166,7 +166,7 @@ export class AppService {
           }
           const verified = speakeasy.totp.verify({
             secret: userEntity.google2fa_secret,
-            otp: signDto.otp,
+            token: signDto.otp,
             encoding: 'base32',
           });
           if (!verified)
